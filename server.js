@@ -1,7 +1,7 @@
 const express = require('express')
 require('dotenv').config()
 const multer = require('multer')
-const image = multer({dest:'upload/'})
+
 const multerS3 = require('multer-s3')
 const aws = require('aws-sdk')
 const path = require('path')
