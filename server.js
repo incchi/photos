@@ -1,11 +1,14 @@
 const express = require('express')
 require('dotenv').config()
 const multer = require('multer')
+const image = multer({dest:'upload/'})
 const multerS3 = require('multer-s3')
 const aws = require('aws-sdk')
 const path = require('path')
 const client = require('./controller/redis')
 const Bull = require('bull')
+
+
 
 const app = express()
 app.set("view engine", "ejs")
@@ -16,75 +19,51 @@ const s3 = new aws.S3()
 aws.config.update({
     region:'ap-south-1',
 
-    credentials:{accessKeyId:'AKIAXYKJXE24XYRVFDVC',
-    secretAccessKey: "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"}
+    credentials:{accessKeyId:'AKIARODUXGRCPSKVN3G5',
+    secretAccessKey: "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"}
 })
 
 const bucket_name = "inchhibucket"
 
-const imageUploadQueue = new Bull ('imageUploadQueue')
+const fileUploadQueue = new Bull('fileUploadQueue');
 
-let uploadImage = multer({
-    storage : multerS3({
-        s3:s3,
-        bucket : bucket_name,
-        acl : 'public-read',
-        contentType : multerS3.AUTO_CONTENT_TYPE,
-        key : function(req,file,cb) {
-            cb(null,file.originalname)
+let upload = multer({
+    storage: multerS3({
+        s3: s3,
+        bucket: bucket_name,
+        acl: "public-read",
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+        key: function (req, file, cb) {
+            cb(null, file.originalname);
         }
     })
-})
+});
+
 
 app.get('/home',(req,res)=>{
     res.render('view')
 })
-const sendToS3 = async (bucket, key, body) => {
-    const s3Params = {
-        Bucket: bucket,
-        Key: key,
-        Body: body
-    };
-    return s3.send(new aws.PutObjectCommand(s3Params));
-}
-app.post('/upload', uploadImage.array("images", 50), (req, res) => {
-    const files = req.files.map(file => ({ originalname: file.originalname, buffer: file.buffer }));
-    imageUploadQueue.add({ files });
-    res.json({ message: `upload successful ${req.files.length}` });
+app.post("/upload", upload.array("images", 100), (req, res, next)=>{
+    const files = req.files.map(file => ({ originalname: file.originalname }));
+    fileUploadQueue.add({ files });
+    res.redirect('/home')
 });
 
-imageUploadQueue.process(async (job) => {
+fileUploadQueue.process(async (job) => {
     const files = job.data.files;
     for (const file of files) {
-        await sendToS3(bucket_name, file.originalname, file.buffer);
+        const s3Params = {
+            Bucket: bucket_name,
+            Key: file.originalname
+        };
+
+        const signedUrl = await s3.getSignedUrlPromise('getObject', s3Params);
+        console.log('Signed URL for', file.originalname, ':', signedUrl);
+
+        await client.set(file.originalname, signedUrl);
+        await client.expire(file.originalname, 120); // Expire in 120 seconds
     }
 });
-
-// app.post('/upload',uploadImage.array("images",50),(req,res)=>{
-
-//     const file = req.files.map(file => ({originalname : file.originalname}))
-//     imageUploadQueue.add({file})
-//     res.json({message : `upload successfull ${req.file.length}`})
-// })
-
-
-// imageUploadQueue.process(async (job)=>{
-//     const files = job.data.files
-//     const baseURL = `https://${bucket_name}.s3.amazonaws.com/`;
-
-//     for (const file of files) {
-//         const s3Params = {
-//             Bucket: bucket_name,
-//             Key: file.originalname,
-//         }
-//         const signedUrl = await s3.getSignedUrlPromise('getObject', s3Params);
-//         console.log('Signed URL for', file.originalname, ':', signedUrl);
-
-//         // Save the signed URL to Redis (replace with your Redis logic)
-//         await client.set(file.originalname, signedUrl);
-//         await client.expire(file.originalname, 120); 
-//     }
-// })
 
 
 
@@ -112,6 +91,6 @@ s3.listObjects({Bucket: bucket_name})
 
 
 app.listen(3000, () => {
-console.log(`Server is running on port `);
+    console.log(`Server is running on port 3000`);
 })
 
