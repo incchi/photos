@@ -39,33 +39,53 @@ let uploadImage = multer({
 app.get('/home',(req,res)=>{
     res.render('view')
 })
+const sendToS3 = async (bucket, key, body) => {
+    const s3Params = {
+        Bucket: bucket,
+        Key: key,
+        Body: body
+    };
+    return s3.send(new aws.PutObjectCommand(s3Params));
+}
+app.post('/upload', uploadImage.array("images", 50), (req, res) => {
+    const files = req.files.map(file => ({ originalname: file.originalname, buffer: file.buffer }));
+    imageUploadQueue.add({ files });
+    res.json({ message: `upload successful ${req.files.length}` });
+});
 
-
-app.post('/upload',uploadImage.array("images",50),(req,res)=>{
-
-    const file = req.files.map(file => ({originalname : file.originalname}))
-    imageUploadQueue.add({file})
-    res.json({message : `upload successfull ${req.file.length}`})
-})
-
-
-imageUploadQueue.process(async (job)=>{
-    const files = job.data.files
-    const baseURL = `https://${bucket_name}.s3.amazonaws.com/`;
-
+imageUploadQueue.process(async (job) => {
+    const files = job.data.files;
     for (const file of files) {
-        const s3Params = {
-            Bucket: bucket_name,
-            Key: file.originalname
-        }
-        const signedUrl = await s3.getSignedUrlPromise('getObject', s3Params);
-        console.log('Signed URL for', file.originalname, ':', signedUrl);
-
-        // Save the signed URL to Redis (replace with your Redis logic)
-        await client.set(file.originalname, signedUrl);
-        await client.expire(file.originalname, 120); 
+        await sendToS3(bucket_name, file.originalname, file.buffer);
     }
-})
+});
+
+// app.post('/upload',uploadImage.array("images",50),(req,res)=>{
+
+//     const file = req.files.map(file => ({originalname : file.originalname}))
+//     imageUploadQueue.add({file})
+//     res.json({message : `upload successfull ${req.file.length}`})
+// })
+
+
+// imageUploadQueue.process(async (job)=>{
+//     const files = job.data.files
+//     const baseURL = `https://${bucket_name}.s3.amazonaws.com/`;
+
+//     for (const file of files) {
+//         const s3Params = {
+//             Bucket: bucket_name,
+//             Key: file.originalname,
+//         }
+//         const signedUrl = await s3.getSignedUrlPromise('getObject', s3Params);
+//         console.log('Signed URL for', file.originalname, ':', signedUrl);
+
+//         // Save the signed URL to Redis (replace with your Redis logic)
+//         await client.set(file.originalname, signedUrl);
+//         await client.expire(file.originalname, 120); 
+//     }
+// })
+
 
 
 app.get("/album", async (req, res, next) => {
