@@ -43,8 +43,12 @@ let upload = multer({
 app.get('/home',(req,res)=>{
     res.render('view')
 })
-app.post("/upload", upload.array("images", 100), (req, res, next)=>{
-    const files = req.files.map(file => ({ originalname: file.originalname }));
+app.post("/upload", upload.array("images", 200), (req, res, next)=>{
+    // console.log(req.files);
+    const files = req.files.map(file =>{ 
+        console.log(file);
+        ({ originalname: file.originalname })
+    });
     fileUploadQueue.add({ files });
     res.redirect('/home')
 });
@@ -58,10 +62,10 @@ fileUploadQueue.process(async (job) => {
         };
 
         const signedUrl = await s3.getSignedUrlPromise('getObject', s3Params);
-        console.log('Signed URL for', file.originalname, ':', signedUrl);
+        // console.log('Signed URL for', file.originalname, ':', signedUrl);
 
         await client.set(file.originalname, signedUrl);
-        await client.expire(file.originalname, 120); // Expire in 120 seconds
+        await client.expire(file.originalname, 5); 
     }
 });
 
@@ -78,7 +82,7 @@ app.get("/album", async (req, res, next) => {
 s3.listObjects({Bucket: bucket_name})
 .promise()
 .then(data => {
-    console.log(data)
+    // console.log(data)
     let urlArr = data.Contents.map(e => baseURL + e.Key);
     client.set('cachedData', JSON.stringify(data));
     client.expire('cachedData', 120);
